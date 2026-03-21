@@ -188,6 +188,19 @@ GitPilot adds that coordination layer so teams can avoid overwriting each other 
 - Web dashboard
 - Conflict prediction
 
+## Bypassing Hooks (Emergency Only)
+
+GitPilot uses Git hooks to enforce safety checks during commit and push operations.
+In critical situations, hooks can be bypassed temporarily, but this should be used only when necessary.
+
+~~~bash
+git commit --no-verify
+git push --no-verify
+~~~
+
+These commands skip GitPilot checks.
+Using them may cause merge conflicts or overwrite another developer's work.
+
 ## License
 
 MIT
