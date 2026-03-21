@@ -71,7 +71,7 @@ The who view shows:
 ## Installation
 
 ~~~bash
-npm install -g git-pilot
+npm install -g @rkokilan2002/git-pilot
 ~~~
 
 ## Setup
@@ -89,6 +89,13 @@ gtp config set-mongo <mongo-uri>
 ~~~
 
 ## Usage
+
+Run commands with either:
+
+~~~bash
+gtp <command>
+gitpilot <command>
+~~~
 
 Lock file:
 

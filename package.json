@@ -1,5 +1,6 @@
 {
-  "name": "git-pilot",
+  "id": "fix-name",
+  "name": "@rkokilan2002/git-pilot",
   "version": "1.0.0",
   "description": "Local-first Git collaboration CLI for file locking, safe staging, and team activity sync.",
   "type": "module",
