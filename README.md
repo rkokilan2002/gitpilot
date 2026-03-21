@@ -76,17 +76,18 @@ npm install -g @rkokilan2002/git-pilot
 
 ## Setup
 
-Set your user name:
+Initialize GitPilot:
 
 ~~~bash
-gtp config set-user <your-name>
+gtp init
 ~~~
 
-Optional MongoDB sync:
+This will:
+- set your user name (interactive)
+- optionally configure MongoDB
+- install hooks
 
-~~~bash
-gtp config set-mongo <mongo-uri>
-~~~
+No manual setup required.
 
 ## Team Setup (Mongo Sync)
 

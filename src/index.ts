@@ -4,6 +4,8 @@ import { Command } from 'commander';
 import simpleGit from "simple-git";
 import fs from "fs";
 import path from "path";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 import { ensureGitRepo, getChangedFiles, isBehindRemote, getDiffStats } from './utils/git.js';
 import { loadState, saveState } from './utils/state.js';
 import { loadConfig, saveConfig } from "./utils/config.js";
@@ -60,6 +62,134 @@ ${gitPilotHookMarker}
 gitpilot ${command}
 exit $?
 `;
+}
+
+function isValidMongoUri(uri: string) {
+    return uri.startsWith("mongodb://") || uri.startsWith("mongodb+srv://");
+}
+
+async function askYesNoWithRetry(rl: ReturnType<typeof createInterface>, prompt: string, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+        const answer = (await rl.question(prompt)).trim().toLowerCase();
+
+        if (answer === "y") {
+            return true;
+        }
+
+        if (answer === "n") {
+            return false;
+        }
+
+        warning("Please enter y or n");
+    }
+
+    return null;
+}
+
+async function askNameWithRetry(rl: ReturnType<typeof createInterface>, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+        const name = (await rl.question("Enter your name: ")).trim();
+
+        if (name) {
+            return name;
+        }
+
+        error("Name cannot be empty");
+    }
+
+    return null;
+}
+
+async function askMongoUriWithRetry(rl: ReturnType<typeof createInterface>, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+        const mongoUri = (await rl.question("Enter Mongo URI: ")).trim();
+
+        if (isValidMongoUri(mongoUri)) {
+            return mongoUri;
+        }
+
+        error("Invalid Mongo URI");
+    }
+
+    return null;
+}
+
+function getHookStateSummary() {
+    const hooksDir = path.join(process.cwd(), ".git", "hooks");
+
+    let managed = 0;
+    let missing = 0;
+    let nonManaged = 0;
+
+    for (const hook of hookDefs) {
+        const hookPath = path.join(hooksDir, hook.fileName);
+
+        if (!fs.existsSync(hookPath)) {
+            missing += 1;
+            continue;
+        }
+
+        const content = fs.readFileSync(hookPath, "utf8");
+        if (isGitPilotManagedHook(content)) {
+            managed += 1;
+        } else {
+            nonManaged += 1;
+        }
+    }
+
+    return { managed, missing, nonManaged };
+}
+
+function installGitPilotHooks() {
+    const hooksDir = path.join(process.cwd(), ".git", "hooks");
+    fs.mkdirSync(hooksDir, { recursive: true });
+
+    let installed = 0;
+
+    for (const hook of hookDefs) {
+        const hookPath = path.join(hooksDir, hook.fileName);
+
+        if (fs.existsSync(hookPath)) {
+            const existing = fs.readFileSync(hookPath, "utf8");
+
+            if (isGitPilotManagedHook(existing)) {
+                info(`${hook.fileName} already installed`);
+                continue;
+            }
+
+            warning(`Existing ${hook.fileName} hook detected, skip`);
+            continue;
+        }
+
+        fs.writeFileSync(hookPath, makeHookScript(hook.command));
+        fs.chmodSync(hookPath, 0o755);
+        success(`Installed ${hook.fileName} hook`);
+        installed += 1;
+    }
+
+    return { installed };
+}
+
+function areAllGitPilotHooksInstalled() {
+    const hooksDir = path.join(process.cwd(), ".git", "hooks");
+
+    if (!fs.existsSync(hooksDir)) {
+        return false;
+    }
+
+    for (const hook of hookDefs) {
+        const hookPath = path.join(hooksDir, hook.fileName);
+        if (!fs.existsSync(hookPath)) {
+            return false;
+        }
+
+        const content = fs.readFileSync(hookPath, "utf8");
+        if (!isGitPilotManagedHook(content)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function formatErrorMessage(err: unknown) {
@@ -221,6 +351,190 @@ config
         configData.mongoUri = uri;
         await saveConfig(configData);
         success("Mongo URI configured");
+    }));
+
+config
+    .command("unset-user")
+    .description("Remove configured user")
+    .action(safeAction(async () => {
+        const configData = await loadConfig();
+
+        if (!configData.user) {
+            info("User not configured");
+            return;
+        }
+
+        delete configData.user;
+        await saveConfig(configData);
+        success("User removed");
+    }));
+
+config
+    .command("unset-mongo")
+    .description("Remove configured MongoDB URI")
+    .action(safeAction(async () => {
+        const configData = await loadConfig();
+
+        if (!configData.mongoUri) {
+            info("Mongo not configured");
+            return;
+        }
+
+        delete configData.mongoUri;
+        await saveConfig(configData);
+        success("Mongo removed");
+    }));
+
+config
+    .command("reset")
+    .description("Reset all GitPilot configuration")
+    .action(safeAction(async () => {
+        await saveConfig({});
+        success("Configuration reset");
+    }));
+
+config
+    .command("list")
+    .description("Show current GitPilot configuration")
+    .action(safeAction(async () => {
+        const configData = await loadConfig();
+
+        if (configData.user) {
+            info(`User: ${configData.user}`);
+        } else {
+            info("User: not configured");
+        }
+
+        if (configData.mongoUri) {
+            info("Mongo: configured");
+        } else {
+            info("Mongo: not configured");
+        }
+    }));
+
+program
+    .command("init")
+    .description("Initialize GitPilot in current repository")
+    .option("-y, --yes", "Accept defaults and skip prompts")
+    .action(safeAction(async (options) => {
+        const useDefaults = Boolean(options?.yes);
+        const gitPath = path.join(process.cwd(), ".git");
+        if (!fs.existsSync(gitPath)) {
+            error("Not a git repository");
+            return;
+        }
+
+        const configData = await loadConfig();
+        const rl = createInterface({ input, output });
+
+        try {
+            if (!configData.user) {
+                let detectedGitUser = "";
+
+                try {
+                    detectedGitUser = (await git.raw(["config", "user.name"]))?.trim() ?? "";
+                } catch {
+                    detectedGitUser = "";
+                }
+
+                if (detectedGitUser) {
+                    info(`Detected git user: ${detectedGitUser}`);
+
+                    if (useDefaults) {
+                        configData.user = detectedGitUser;
+                        await saveConfig(configData);
+                        success(`User set: ${detectedGitUser}`);
+                    } else {
+                        const useDetected = await askYesNoWithRetry(rl, "Use this name? (y/n): ");
+
+                        if (useDetected === null) {
+                            error("Too many invalid responses");
+                            return;
+                        }
+
+                        if (useDetected) {
+                            configData.user = detectedGitUser;
+                            await saveConfig(configData);
+                            success(`User set: ${detectedGitUser}`);
+                        } else {
+                            const nameInput = await askNameWithRetry(rl);
+
+                            if (!nameInput) {
+                                error("Name cannot be empty");
+                                return;
+                            }
+
+                            configData.user = nameInput;
+                            await saveConfig(configData);
+                            success(`User set: ${nameInput}`);
+                        }
+                    }
+                } else {
+                    if (useDefaults) {
+                        error("Could not detect git user. Run gtp init without --yes or set user manually.");
+                        return;
+                    }
+
+                    const nameInput = await askNameWithRetry(rl);
+
+                    if (!nameInput) {
+                        error("Name cannot be empty");
+                        return;
+                    }
+
+                    configData.user = nameInput;
+                    await saveConfig(configData);
+                    success(`User set: ${nameInput}`);
+                }
+            } else {
+                success(`User already set: ${configData.user}`);
+            }
+
+            if (!configData.mongoUri) {
+                if (useDefaults) {
+                    info("Mongo not configured");
+                } else {
+                    const wantsMongo = await askYesNoWithRetry(rl, "Configure MongoDB for team sync? (y/n): ");
+
+                    if (wantsMongo === null) {
+                        error("Too many invalid responses");
+                        return;
+                    }
+
+                    if (wantsMongo) {
+                        const mongoInput = await askMongoUriWithRetry(rl);
+
+                        if (!mongoInput) {
+                            error("Invalid Mongo URI");
+                            return;
+                        }
+
+                        configData.mongoUri = mongoInput;
+                        await saveConfig(configData);
+                        success("Mongo configured");
+                    } else {
+                        info("Skipping Mongo setup");
+                    }
+                }
+            } else {
+                success("Mongo already configured");
+            }
+        } finally {
+            rl.close();
+        }
+
+        const hookState = getHookStateSummary();
+
+        if (hookState.managed === hookDefs.length) {
+            success("Hooks already installed");
+        } else if (hookState.nonManaged > 0) {
+            warning("Existing hooks detected, not modified");
+        } else {
+            installGitPilotHooks();
+            success("Hooks installed");
+        }
+
+        success("GitPilot initialized");
     }));
 
 // Command: gtp unlock <file> - only the user who locked the file can unlock it, and if not locked show error
@@ -403,29 +717,7 @@ program
     .description("Install GitPilot hooks")
     .action(safeAction(async () => {
         ensureGitRepo();
-
-        const hooksDir = path.join(process.cwd(), ".git", "hooks");
-        fs.mkdirSync(hooksDir, { recursive: true });
-
-        for (const hook of hookDefs) {
-            const hookPath = path.join(hooksDir, hook.fileName);
-
-            if (fs.existsSync(hookPath)) {
-                const existing = fs.readFileSync(hookPath, "utf8");
-
-                if (isGitPilotManagedHook(existing)) {
-                    info(`${hook.fileName} already installed`);
-                    continue;
-                }
-
-                warning(`Existing ${hook.fileName} hook detected, skip`);
-                continue;
-            }
-
-            fs.writeFileSync(hookPath, makeHookScript(hook.command));
-            fs.chmodSync(hookPath, 0o755);
-            success(`Installed ${hook.fileName} hook`);
-        }
+        installGitPilotHooks();
     }));
 
 program
