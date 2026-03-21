@@ -390,6 +390,7 @@ program
 
         const preCommitScript = `#!/bin/sh
 gitpilot hook-precommit
+    exit $?
 `;
 
         fs.writeFileSync(preCommitPath, preCommitScript);
@@ -399,6 +400,7 @@ gitpilot hook-precommit
 
         const prePushScript = `#!/bin/sh
 gitpilot hook-prepush
+    exit $?
 `;
 
         fs.writeFileSync(prePushPath, prePushScript);
@@ -411,62 +413,74 @@ gitpilot hook-prepush
 program
     .command("hook-precommit")
     .description("Internal pre-commit hook")
-    .action(safeAction(async () => {
-        ensureGitRepo();
+    .action(async () => {
+        try {
+            ensureGitRepo();
 
-        const repo = getRepoName();
+            const repo = getRepoName();
 
-        await pullState(repo);
+            await pullState(repo);
 
-        const user = await requireUserConfig();
-        if (!user) {
-            process.exit(1);
-        }
-
-        const state = normalizeState(await loadState());
-        const changedFiles = (await getChangedFiles()).map((file) => normalizeRepoPath(file));
-
-        const blocked: string[] = [];
-
-        for (const file of changedFiles) {
-            const lock = state.locks.find((l: any) => l.file === file);
-
-            if (lock && lock.user !== user) {
-                blocked.push(`${file} (locked by ${lock.user})`);
+            const user = await requireUserConfig();
+            if (!user) {
+                process.exit(1);
             }
-        }
 
-        if (blocked.length > 0) {
-            error("Commit blocked due to active locks");
-            list(blocked);
+            const state = normalizeState(await loadState());
+            const changedFiles = (await getChangedFiles()).map((file) => normalizeRepoPath(file));
+
+            const blocked: string[] = [];
+
+            for (const file of changedFiles) {
+                const lock = state.locks.find((l: any) => l.file === file);
+
+                if (lock && lock.user !== user) {
+                    blocked.push(`${file} (locked by ${lock.user})`);
+                }
+            }
+
+            if (blocked.length > 0) {
+                error("Commit blocked due to active locks");
+                list(blocked);
+                process.exit(1);
+            }
+
+            success("Pre-commit checks passed");
+            process.exit(0);
+        } catch (err) {
+            error(formatErrorMessage(err));
             process.exit(1);
         }
-
-        success("Pre-commit checks passed");
-    }, { exitOnError: true }));
+    });
 
 // Internal Command: hook-prepush - this is the script that runs in the pre-push hook. It checks if the local branch is behind the remote branch, and blocks the push if it is, to encourage users to pull the latest changes before pushing. This helps reduce conflicts and ensures that users are aware of any new locks or activity before pushing their changes. This command is not meant to be run directly by users, but is called by the pre-push hook script.
 program
     .command("hook-prepush")
     .description("Internal pre-push hook")
-    .action(safeAction(async () => {
-        ensureGitRepo();
+    .action(async () => {
+        try {
+            ensureGitRepo();
 
-        const repo = getRepoName();
+            const repo = getRepoName();
 
-        await pullState(repo);
-        await pushState(repo);
+            await pullState(repo);
+            await pushState(repo);
 
-        const behind = await isBehindRemote();
+            const behind = await isBehindRemote();
 
-        if (behind > 0) {
-            error(`Your branch is behind by ${behind} commits`);
-            info("Run: git pull --rebase");
+            if (behind > 0) {
+                error(`Your branch is behind by ${behind} commits`);
+                info("Run: git pull --rebase");
+                process.exit(1);
+            }
+
+            success("Pre-push checks passed");
+            process.exit(0);
+        } catch (err) {
+            error(formatErrorMessage(err));
             process.exit(1);
         }
-
-        success("Pre-push checks passed");
-    }, { exitOnError: true }));
+    });
 
 
 const rawArgs = process.argv;
