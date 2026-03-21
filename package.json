@@ -1,0 +1,51 @@
+{
+  "name": "git-pilot",
+  "version": "1.0.0",
+  "description": "Local-first Git collaboration CLI for file locking, safe staging, and team activity sync.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "gitpilot": "dist/index.js",
+    "gtp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts"
+  },
+  "keywords": [
+    "git",
+    "cli",
+    "devtools",
+    "collaboration",
+    "productivity"
+  ],
+  "author": "Kokilan R",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rkokilan2002/git-pilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rkokilan2002/git-pilot/issues"
+  },
+  "homepage": "https://github.com/rkokilan2002/git-pilot#readme",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "fs-extra": "^11.3.4",
+    "mongodb": "^7.1.0",
+    "simple-git": "^3.33.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "tsx": "^4.21.0",
+    "@types/node": "^25.5.0",
+    "@types/fs-extra": "^11.0.4"
+  }
+}
