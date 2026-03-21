@@ -14,6 +14,8 @@ function mergeLocks(local: any[], remote: any[]) {
 }
 
 export async function pullState(repo: string) {
+  let client: { close: () => Promise<void> } | null = null;
+
   try {
     const config = await loadConfig();
 
@@ -21,7 +23,9 @@ export async function pullState(repo: string) {
       return;
     }
 
-    const db = await getDB();
+    const mongo = await getDB();
+    const db = mongo.db;
+    client = mongo.client;
     const col = db.collection("state");
 
     const remote = await col.findOne({ repo });
@@ -44,10 +48,16 @@ export async function pullState(repo: string) {
     }
 
     warning("Sync pull skipped (offline)");
+  } finally {
+    if (client) {
+      await client.close();
+    }
   }
 }
 
 export async function pushState(repo: string) {
+  let client: { close: () => Promise<void> } | null = null;
+
   try {
     const config = await loadConfig();
 
@@ -55,7 +65,9 @@ export async function pushState(repo: string) {
       return;
     }
 
-    const db = await getDB();
+    const mongo = await getDB();
+    const db = mongo.db;
+    client = mongo.client;
     const col = db.collection("state");
 
     const state = await loadState();
@@ -78,5 +90,9 @@ export async function pushState(repo: string) {
     }
 
     warning("Sync push skipped (offline)");
+  } finally {
+    if (client) {
+      await client.close();
+    }
   }
 }

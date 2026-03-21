@@ -102,11 +102,7 @@ program
         const existing = state.locks.find((l: any) => l.file === targetFile);
 
         if (existing) {
-            if (existing.user === user) {
-                warning(`Already locked: ${targetFile} (you)`);
-            } else {
-                warning(`Already locked by ${existing.user}: ${targetFile}`);
-            }
+            warning(`Already locked: ${targetFile}`);
             return;
         }
 
@@ -148,7 +144,7 @@ program
         } else {
             const lockWidth = Math.max(...activeLocks.map((l: any) => l.file.length), 12);
             activeLocks.forEach((l: any) => {
-                console.log(`${l.file.padEnd(lockWidth)} -> ${l.user}`);
+                console.log(`  ${l.file.padEnd(lockWidth)} -> ${l.user}`);
             });
         }
 
@@ -171,7 +167,7 @@ program
                 const activityWidth = Math.max(...rows.map((a: any) => a.file.length), 12);
 
                 latestActivity.forEach((a) => {
-                    console.log(`${a.file.padEnd(activityWidth)} -> ${a.user} (+${a.added} / -${a.removed})`);
+                    console.log(`  ${a.file.padEnd(activityWidth)} -> ${a.user} (+${a.added} / -${a.removed})`);
                 });
             }
         }
@@ -341,13 +337,14 @@ program
         if (changedFiles.length === 0) {
             info("None");
         } else {
+            const fileWidth = Math.max(...changedFiles.map((file) => file.length), 12);
             changedFiles.forEach(file => {
                 const lock = state.locks.find((l: any) => l.file === file);
                 if (lock) {
-                    const status = lock.user === config.user ? "[Locked by You]" : `[LOCKED BY ${lock.user}]`;
-                    console.log(`${file} ${status}`);
+                    const status = lock.user === config.user ? "locked by you" : `locked by ${lock.user}`;
+                    console.log(`  ${file.padEnd(fileWidth)} -> ${status}`);
                 } else {
-                    console.log(`${file} [UNLOCKED]`);
+                    console.log(`  ${file.padEnd(fileWidth)} -> unlocked`);
                 }
             });
         }
@@ -355,8 +352,9 @@ program
         const otherLocks = state.locks.filter((l: any) => !changedFiles.includes(l.file));
         section("Other Active Locks");
         if (otherLocks.length > 0) {
+            const lockWidth = Math.max(...otherLocks.map((l: any) => l.file.length), 12);
             otherLocks.forEach((l: any) => {
-                console.log(`${l.file} -> ${l.user}`);
+                console.log(`  ${l.file.padEnd(lockWidth)} -> ${l.user}`);
             });
         } else {
             info("None");

@@ -22,14 +22,12 @@ export function info(msg: string) {
 
 export function header(title: string) {
   printLine("");
-  printLine(chalk.bold(`=== ${title.toUpperCase()} ===`));
-  printLine("");
+  printLine(chalk.bold(title.toUpperCase()));
 }
 
 export function section(title: string) {
   printLine("");
-  printLine(chalk.dim(`=== ${title.toUpperCase()} ===`));
-  printLine("");
+  printLine(chalk.dim(title));
 }
 
 export function list(items: string[]) {
