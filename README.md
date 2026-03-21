@@ -188,6 +188,34 @@ GitPilot adds that coordination layer so teams can avoid overwriting each other 
 - Web dashboard
 - Conflict prediction
 
+## Team Setup (Mongo Sync)
+
+GitPilot supports optional team synchronization using MongoDB.
+GitPilot works locally by default, and MongoDB is only needed for team collaboration.
+
+Step 1 - Create a MongoDB database
+
+Use MongoDB Atlas for setup.
+Create a cluster and copy the connection URI.
+
+Step 2 - Share the URI securely
+
+Do not commit the Mongo URI into the repository.
+Share it only through secure channels, not public messages or public files.
+
+Step 3 - Configure GitPilot on each machine
+
+~~~bash
+gtp config set-mongo <mongo-uri>
+~~~
+
+After setup, locks are shared across team members and activity is synced across machines.
+Commands like `gtp who` show team-wide data.
+
+Security note:
+Do not expose credentials.
+Treat the Mongo URI as a secret.
+
 ## Bypassing Hooks (Emergency Only)
 
 GitPilot uses Git hooks to enforce safety checks during commit and push operations.
