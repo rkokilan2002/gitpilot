@@ -16,6 +16,13 @@ const program = new Command();
 type LockEntry = { file: string; user: string; time?: string };
 type ActivityEntry = { file: string; user: string; added: number; removed: number; timestamp: number };
 type StateShape = { locks: LockEntry[]; activity: ActivityEntry[] };
+type HookDef = { fileName: "pre-commit" | "pre-push"; command: "hook-precommit" | "hook-prepush" };
+
+const hookDefs: HookDef[] = [
+    { fileName: "pre-commit", command: "hook-precommit" },
+    { fileName: "pre-push", command: "hook-prepush" },
+];
+const gitPilotHookMarker = "# GitPilot Hook";
 
 function getRepoName() {
     return path.basename(process.cwd());
@@ -39,6 +46,20 @@ function normalizeState(rawState: any): StateShape {
     }));
 
     return { locks, activity };
+}
+
+function isGitPilotManagedHook(content: string) {
+    return content.includes(gitPilotHookMarker) ||
+        content.includes("gitpilot hook-precommit") ||
+        content.includes("gitpilot hook-prepush");
+}
+
+function makeHookScript(command: HookDef["command"]) {
+    return `#!/bin/sh
+${gitPilotHookMarker}
+gitpilot ${command}
+exit $?
+`;
 }
 
 function formatErrorMessage(err: unknown) {
@@ -384,29 +405,107 @@ program
         ensureGitRepo();
 
         const hooksDir = path.join(process.cwd(), ".git", "hooks");
+        fs.mkdirSync(hooksDir, { recursive: true });
 
+        for (const hook of hookDefs) {
+            const hookPath = path.join(hooksDir, hook.fileName);
 
-        const preCommitPath = path.join(hooksDir, "pre-commit");
+            if (fs.existsSync(hookPath)) {
+                const existing = fs.readFileSync(hookPath, "utf8");
 
-        const preCommitScript = `#!/bin/sh
-gitpilot hook-precommit
-    exit $?
-`;
+                if (isGitPilotManagedHook(existing)) {
+                    info(`${hook.fileName} already installed`);
+                    continue;
+                }
 
-        fs.writeFileSync(preCommitPath, preCommitScript);
-        fs.chmodSync(preCommitPath, 0o755);
+                warning(`Existing ${hook.fileName} hook detected, skip`);
+                continue;
+            }
 
-        const prePushPath = path.join(hooksDir, "pre-push");
+            fs.writeFileSync(hookPath, makeHookScript(hook.command));
+            fs.chmodSync(hookPath, 0o755);
+            success(`Installed ${hook.fileName} hook`);
+        }
+    }));
 
-        const prePushScript = `#!/bin/sh
-gitpilot hook-prepush
-    exit $?
-`;
+program
+    .command("uninstall")
+    .description("Remove GitPilot hooks from the repository")
+    .action(safeAction(async () => {
+        ensureGitRepo();
 
-        fs.writeFileSync(prePushPath, prePushScript);
-        fs.chmodSync(prePushPath, 0o755);
+        const hooksDir = path.join(process.cwd(), ".git", "hooks");
 
-        success("Hooks installed");
+        if (!fs.existsSync(hooksDir)) {
+            info("No pre-commit hook found");
+            info("No pre-push hook found");
+            return;
+        }
+
+        for (const hook of hookDefs) {
+            const hookPath = path.join(hooksDir, hook.fileName);
+
+            if (!fs.existsSync(hookPath)) {
+                info(`No ${hook.fileName} hook found`);
+                continue;
+            }
+
+            const content = fs.readFileSync(hookPath, "utf8");
+
+            if (isGitPilotManagedHook(content)) {
+                fs.unlinkSync(hookPath);
+                success(`Removed ${hook.fileName} hook`);
+                continue;
+            }
+
+            info(`Skipped ${hook.fileName} (not managed by GitPilot)`);
+        }
+    }));
+
+program
+    .command("doctor")
+    .description("Check GitPilot setup")
+    .action(safeAction(async () => {
+        header("GitPilot Doctor");
+
+        const gitPath = path.join(process.cwd(), ".git");
+        if (!fs.existsSync(gitPath)) {
+            error("Not a git repository");
+            return;
+        }
+
+        success("Git repository detected");
+
+        const config = await loadConfig();
+        if (!config.user) {
+            warning("User not configured");
+        } else {
+            success(`User: ${config.user}`);
+        }
+
+        if (config.mongoUri) {
+            success("Mongo configured");
+        } else {
+            info("Mongo not configured");
+        }
+
+        const hooksDir = path.join(process.cwd(), ".git", "hooks");
+
+        for (const hook of hookDefs) {
+            const hookPath = path.join(hooksDir, hook.fileName);
+
+            if (!fs.existsSync(hookPath)) {
+                warning(`${hook.fileName} hook missing`);
+                continue;
+            }
+
+            const content = fs.readFileSync(hookPath, "utf8");
+            if (content.includes(gitPilotHookMarker)) {
+                success(`${hook.fileName} hook installed`);
+            } else {
+                warning(`${hook.fileName} exists but not managed by GitPilot`);
+            }
+        }
     }));
 
 // Internal Command: hook-precommit - this is the script that runs in the pre-commit hook. It checks for active locks on modified files and blocks the commit if there are conflicts. This command is not meant to be run directly by users, but is called by the pre-commit hook script.

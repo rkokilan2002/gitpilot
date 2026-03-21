@@ -44,9 +44,9 @@
     "simple-git": "^3.33.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "tsx": "^4.21.0",
+    "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.5.0",
-    "@types/fs-extra": "^11.0.4"
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }
