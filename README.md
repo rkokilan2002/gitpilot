@@ -296,3 +296,8 @@ GitPilot adds that coordination layer so teams can avoid overwriting each other 
 ## License
 
 MIT
+
+## Repository
+
+- Source: https://github.com/rkokilan2002/gitpilot
+- Issues: https://github.com/rkokilan2002/gitpilot/issues
