@@ -8,8 +8,8 @@ GitPilot runs in two modes:
 - Optional MongoDB sync for team collaboration
 
 GitPilot CLI commands:
-- gitpilot
-- gtp (alias)
+- `gitpilot`
+- `gtp` (alias)
 
 ## Project Overview
 
@@ -70,110 +70,52 @@ The who view shows:
 
 ## Installation
 
+Install globally:
+
 ~~~bash
 npm install -g @rkokilan2002/git-pilot
 ~~~
 
 ## Setup
 
-Initialize GitPilot:
+Initialize GitPilot in your repository:
 
 ~~~bash
 gtp init
 ~~~
 
 This will:
+- verify you are in a Git repository
 - set your user name (interactive)
 - optionally configure MongoDB
-- install hooks
+- install Git hooks
 
-No manual setup required.
-
-## Team Setup (Mongo Sync)
-
-GitPilot supports optional team synchronization using MongoDB.
-GitPilot works locally by default, and MongoDB is only needed for team collaboration.
-
-Step 1 - Create a MongoDB database
-
-Use MongoDB Atlas for setup.
-Create a cluster and copy the connection URI.
-
-Step 2 - Share the URI securely
-
-Do not commit the Mongo URI into the repository.
-Share it only through secure channels, not public messages or public files.
-
-Step 3 - Configure GitPilot on each machine
+### Setup with defaults (non-interactive):
 
 ~~~bash
-gtp config set-mongo <mongo-uri>
+gtp init --yes
 ~~~
 
-After setup, locks are shared across team members and activity is synced across machines.
-Commands like `gtp who` show team-wide data.
-
-Security note:
-Do not expose credentials.
-Treat the Mongo URI as a secret.
-
-## Installing Hooks
-
-~~~bash
-gtp install
-~~~
-
-## Removing Hooks
-
-~~~bash
-gtp uninstall
-~~~
-
-Removes only GitPilot-managed hooks.
-
-## Doctor
-
-~~~bash
-gtp doctor
-~~~
-
-Checks GitPilot setup including:
-- git repository
-- user config
-- Mongo config
-- hooks status
+This skips prompts and uses defaults where possible.
 
 ## Usage
 
-Run commands with either:
+Lock a file:
 
 ~~~bash
-gtp <command>
-gitpilot <command>
+gtp lock <file>
 ~~~
 
-Lock file:
+Unlock a file:
 
 ~~~bash
-gtp lock src/auth.ts
+gtp unlock <file>
 ~~~
 
-Unlock file:
-
-~~~bash
-gtp unlock src/auth.ts
-~~~
-
-See team activity:
+View team activity and locks:
 
 ~~~bash
 gtp who
-~~~
-
-Safe add:
-
-~~~bash
-gtp add .
 ~~~
 
 Repository status:
@@ -182,62 +124,162 @@ Repository status:
 gtp status
 ~~~
 
-Manual sync (optional):
+Safe add (with lock and remote checks):
+
+~~~bash
+gtp add <path>
+~~~
+
+Manual sync with MongoDB:
 
 ~~~bash
 gtp sync
 ~~~
 
-Install hooks:
+Doctor (check GitPilot setup):
+
+~~~bash
+gtp doctor
+~~~
+
+## Configuration
+
+View current configuration:
+
+~~~bash
+gtp config list
+~~~
+
+Set your user name:
+
+~~~bash
+gtp config set-user <name>
+~~~
+
+Remove user configuration:
+
+~~~bash
+gtp config unset-user
+~~~
+
+Set MongoDB for team sync:
+
+~~~bash
+gtp config set-mongo <uri>
+~~~
+
+Remove MongoDB configuration:
+
+~~~bash
+gtp config unset-mongo
+~~~
+
+Reset all configuration:
+
+~~~bash
+gtp config reset
+~~~
+
+### MongoDB Setup
+
+For team sync, set up MongoDB Atlas:
+
+1. Create a MongoDB cluster at [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+2. Create a database user and copy the connection URI
+3. Whitelist your IP in Network Access
+4. Share the URI securely (not in Git or public channels)
+5. Configure on each machine:
+
+~~~bash
+gtp config set-mongo <mongo-uri>
+~~~
+
+After setup, locks and activity are shared across team members.
+
+## Hooks
+
+Install hooks in the repository:
 
 ~~~bash
 gtp install
 ~~~
 
-Bypass hooks (emergency only):
+Remove GitPilot hooks:
+
+~~~bash
+gtp uninstall
+~~~
+
+(Only removes GitPilot-managed hooks, preserves others)
+
+## Advanced
+
+### State Storage
+
+Local state is stored in:
+
+~~~text
+.git/gitpilot/state.json
+~~~
+
+User configuration is stored in:
+
+~~~text
+~/.gitpilot/config.json
+~~~
+
+### Emergency (Bypass hooks)
+
+In critical situations, bypass hooks temporarily:
 
 ~~~bash
 git commit --no-verify
 git push --no-verify
 ~~~
 
-## Example Output
+**Warning:** Using `--no-verify` may cause merge conflicts or overwrite another developer's work.
+
+### Example Output
+
+Status view:
 
 ~~~text
-=== GITPILOT STATUS ===
+[OK] GitPilot Repository Status
 
-ACTIVE LOCKS
+Modified Files
+  src/auth.ts         -> locked by kokilan
+  src/utils.ts        -> unlocked
 
-src/auth.ts    -> kokilan
-
-RECENT ACTIVITY
-
-src/auth.ts    -> kokilan (+20 / -5)
+Other Active Locks
+  src/config.ts       -> alex
 ~~~
 
-## How It Works
-
-State storage:
+Who view:
 
 ~~~text
-.git/gitpilot/state.json
+[OK] GitPilot Status
+
+Active Locks
+  src/auth.ts         -> kokilan
+
+Recent Activity
+  src/auth.ts         -> kokilan (+20 / -5)
+  src/utils.ts        -> alex (+10 / -2)
 ~~~
 
-Config storage:
-
-~~~text
-~/.gitpilot/config.json
-~~~
-
-Optional MongoDB sync shares lock and activity state across team members.
-
-## Design Principles
+### Design Principles
 
 - Local-first
 - No background processes
 - Fast CLI execution
 - Fail-safe offline behavior
 - Minimal friction for daily Git workflows
+
+### How It Works
+
+GitPilot maintains state separately from Git. Each repository is identified by its Git remote URL, ensuring that all team members working on the same repository share the same locks and activity data, regardless of their local folder names.
+
+When MongoDB is configured, state is synced automatically during relevant operations. Without MongoDB, GitPilot works entirely locally within `.git/gitpilot/`.
 
 ## Why GitPilot
 
@@ -250,19 +292,6 @@ GitPilot adds that coordination layer so teams can avoid overwriting each other 
 - VS Code extension
 - Web dashboard
 - Conflict prediction
-
-## Bypassing Hooks (Emergency Only)
-
-GitPilot uses Git hooks to enforce safety checks during commit and push operations.
-In critical situations, hooks can be bypassed temporarily, but this should be used only when necessary.
-
-~~~bash
-git commit --no-verify
-git push --no-verify
-~~~
-
-These commands skip GitPilot checks.
-Using them may cause merge conflicts or overwrite another developer's work.
 
 ## License
 

@@ -20,3 +20,9 @@ export async function loadConfig() {
 export async function saveConfig(config: any) {
     await fs.writeJson(configFile, config, { spaces: 2 });
 }
+
+export async function deleteConfig() {
+    if (await fs.pathExists(configFile)) {
+        await fs.remove(configFile);
+    }
+}

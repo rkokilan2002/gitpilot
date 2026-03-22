@@ -4,11 +4,12 @@ import { Command } from 'commander';
 import simpleGit from "simple-git";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { ensureGitRepo, getChangedFiles, isBehindRemote, getDiffStats } from './utils/git.js';
 import { loadState, saveState } from './utils/state.js';
-import { loadConfig, saveConfig } from "./utils/config.js";
+import { loadConfig, saveConfig, deleteConfig } from "./utils/config.js";
 import { pullState, pushState } from "./utils/sync.js";
 import { error, header, info, list, section, success, warning } from "./utils/ui.js";
 
@@ -28,6 +29,27 @@ const gitPilotHookMarker = "# GitPilot Hook";
 
 function getRepoName() {
     return path.basename(process.cwd());
+}
+
+async function getRepoId(): Promise<string> {
+    try {
+        const remote = await git.remote(["get-url", "origin"]);
+        if (!remote) {
+            warning("No remote origin found. Using local repository identity");
+            return getRepoName();
+        }
+
+        // Normalize: trim, lowercase, remove .git
+        const normalized = remote
+            .trim()
+            .toLowerCase()
+            .replace(/\.git$/, "");
+
+        return normalized;
+    } catch (err) {
+        warning("No remote origin found. Using local repository identity");
+        return getRepoName();
+    }
 }
 
 function normalizeRepoPath(inputPath: string) {
@@ -238,8 +260,15 @@ program
     .description("Lock a file to prevent others from editing it")
     .action(safeAction(async (file) => {
         ensureGitRepo();
-        const repo = getRepoName();
+        const repo = await getRepoId();
         const targetFile = normalizeRepoPath(file);
+
+        // Check if file exists
+        const absolutePath = path.resolve(process.cwd(), file);
+        if (!fs.existsSync(absolutePath)) {
+            error(`File not found: ${targetFile}`);
+            return;
+        }
 
         await pullState(repo);
 
@@ -274,7 +303,7 @@ program
     .description("Show team activity and file locks")
     .action(safeAction(async () => {
         ensureGitRepo();
-        const repo = getRepoName();
+        const repo = await getRepoId();
 
         await pullState(repo);
         const state = normalizeState(await loadState());
@@ -389,8 +418,14 @@ config
     .command("reset")
     .description("Reset all GitPilot configuration")
     .action(safeAction(async () => {
-        await saveConfig({});
-        success("Configuration reset");
+        const initialConfig = await loadConfig();
+
+        if (Object.keys(initialConfig).length > 0) {
+            await deleteConfig();
+            success("Configuration reset");
+        } else {
+            info("No configuration found");
+        }
     }));
 
 config
@@ -543,7 +578,7 @@ program
     .description("Unlock a file")
     .action(safeAction(async (file) => {
         ensureGitRepo();
-        const repo = getRepoName();
+        const repo = await getRepoId();
         const targetFile = normalizeRepoPath(file);
 
         await pullState(repo);
@@ -702,7 +737,7 @@ program
     .description("Sync with MongoDB")
     .action(safeAction(async () => {
         ensureGitRepo();
-        const repo = getRepoName();
+        const repo = await getRepoId();
 
         info("Pulling remote state...");
         await pullState(repo);
@@ -808,7 +843,7 @@ program
         try {
             ensureGitRepo();
 
-            const repo = getRepoName();
+            const repo = await getRepoId();
 
             await pullState(repo);
 
@@ -852,7 +887,7 @@ program
         try {
             ensureGitRepo();
 
-            const repo = getRepoName();
+            const repo = await getRepoId();
 
             await pullState(repo);
             await pushState(repo);
