@@ -249,6 +249,25 @@ async function requireUserConfig() {
     return config.user as string;
 }
 
+async function withFreshState<T>(
+    repo: string,
+    fn: () => Promise<T>,
+    options?: { push?: boolean | ((result: T) => boolean) }
+) {
+    await pullState(repo);
+    const result = await fn();
+
+    const shouldPush = typeof options?.push === "function"
+        ? options.push(result)
+        : Boolean(options?.push);
+
+    if (shouldPush) {
+        await pushState(repo);
+    }
+
+    return result;
+}
+
 program
     .name("gitpilot")
     .description("A CLI tool to assist with Git operations")
@@ -270,31 +289,34 @@ program
             return;
         }
 
-        await pullState(repo);
+        const locked = await withFreshState(repo, async () => {
+            const state = normalizeState(await loadState());
+            const user = await requireUserConfig();
 
-        const state = normalizeState(await loadState());
-        const user = await requireUserConfig();
+            if (!user) {
+                return false;
+            }
 
-        if (!user) {
-            return;
+            const existing = state.locks.find((l: any) => l.file === targetFile);
+
+            if (existing) {
+                warning(`Already locked: ${targetFile}`);
+                return false;
+            }
+
+            state.locks.push({
+                file: targetFile,
+                user,
+                time: new Date().toISOString(),
+            });
+
+            await saveState(state);
+            return true;
+        }, { push: (didLock) => didLock });
+
+        if (locked) {
+            success(`Locked: ${targetFile}`);
         }
-
-        const existing = state.locks.find((l: any) => l.file === targetFile);
-
-        if (existing) {
-            warning(`Already locked: ${targetFile}`);
-            return;
-        }
-
-        state.locks.push({
-            file: targetFile,
-            user,
-            time: new Date().toISOString(),
-        });
-
-        await saveState(state);
-        await pushState(repo);
-        success(`Locked: ${targetFile}`);
     }));
 
 // Command: gtp who - shows who locked which files and recent activity in the repo, including who made changes to which files and when, based on the state file in the .git directory and config file in the user's home directory. If no activity, show message saying no activity yet.
@@ -305,8 +327,7 @@ program
         ensureGitRepo();
         const repo = await getRepoId();
 
-        await pullState(repo);
-        const state = normalizeState(await loadState());
+        const state = await withFreshState(repo, async () => normalizeState(await loadState()));
 
         const activeLocks = state.locks || [];
         const activityLog = state.activity || [];
@@ -581,42 +602,43 @@ program
         const repo = await getRepoId();
         const targetFile = normalizeRepoPath(file);
 
-        await pullState(repo);
+        const unlocked = await withFreshState(repo, async () => {
+            const user = await requireUserConfig();
+            if (!user) {
+                return false;
+            }
 
-        const user = await requireUserConfig();
-        if (!user) {
-            return;
+            const state = normalizeState(await loadState());
+
+            const lockIndex = state.locks.findIndex(
+                (l: any) => l.file === targetFile
+            );
+
+            if (lockIndex === -1) {
+                warning(`Not locked: ${targetFile}`);
+                return false;
+            }
+
+            const lock = state.locks[lockIndex];
+
+            if (!lock) {
+                warning(`Not locked: ${targetFile}`);
+                return false;
+            }
+
+            if (lock.user !== user) {
+                error(`Cannot unlock: ${targetFile} (owned by ${lock.user})`);
+                return false;
+            }
+
+            state.locks.splice(lockIndex, 1);
+            await saveState(state);
+            return true;
+        }, { push: (didUnlock) => didUnlock });
+
+        if (unlocked) {
+            success(`Unlocked: ${targetFile}`);
         }
-
-        const state = normalizeState(await loadState());
-
-        const lockIndex = state.locks.findIndex(
-            (l: any) => l.file === targetFile
-        );
-
-        if (lockIndex === -1) {
-            warning(`Not locked: ${targetFile}`);
-            return;
-        }
-
-        const lock = state.locks[lockIndex];
-
-        if (!lock) {
-            warning(`Not locked: ${targetFile}`);
-            return;
-        }
-
-        if (lock.user !== user) {
-            error(`Cannot unlock: ${targetFile} (owned by ${lock.user})`);
-            return;
-        }
-
-        state.locks.splice(lockIndex, 1);
-
-        await saveState(state);
-        await pushState(repo);
-
-        success(`Unlocked: ${targetFile}`);
     }));
 
 // Command: gtp add <path> - safe git add that checks if you're behind remote before allowing add
@@ -626,11 +648,14 @@ program
     .description("Safe git add with lock protection")
     .action(safeAction(async (pathArg) => {
         ensureGitRepo();
+        const repo = await getRepoId();
 
         const user = await requireUserConfig();
         if (!user) {
             return;
         }
+
+        await pullState(repo);
 
         const behind = await isBehindRemote();
 
@@ -680,6 +705,7 @@ program
         state.activity = state.activity.slice(-500);
 
         await saveState(state);
+        await pushState(repo);
 
         await git.add(pathArg);
 
@@ -692,6 +718,9 @@ program
     .description("Show workspace status with active locks")
     .action(safeAction(async () => {
         ensureGitRepo();
+        const repo = await getRepoId();
+        await pullState(repo);
+
         const state = normalizeState(await loadState());
         const changedFiles = (await getChangedFiles()).map((file) => normalizeRepoPath(file));
         const config = await loadConfig();
